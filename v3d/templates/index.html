@@ -1,0 +1,565 @@
+{% load static %}
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset='utf-8'>
+    <meta http-equiv='X-UA-Compatible' content='IE=edge'>
+    <title>v3d</title>
+    <meta name='viewport' content='width=device-width, initial-scale=1'>
+    <script type="text/javascript" src="{% static 'vendor/dat.gui-master/build/dat.gui.min.js' %}"></script>
+    <link rel="stylesheet" href="{% static 'css/main.css' %}"/>
+
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/css/bootstrap.min.css" rel="stylesheet"
+          integrity="sha384-EVSTQN3/azprG1Anm3QDgpJLIm9Nao0Yz1ztcQTwFspd3yD65VohhpuuCOmLASjC" crossorigin="anonymous">
+
+<body background="{% static 'dark.jpg' %}">
+<nav class="navbar navbar-dark bg-dark">
+    <div class="container-fluid">
+        <h1 class="navbar-brand">Visualización 3D</h1>
+    </div>
+</nav>
+{#<div>#}
+{#    <h1 style="text-align: center">Visualización 3D</h1>#}
+{#</div>#}
+
+<div style="margin-top: 3%; margin-left: 3%; margin-bottom: 0px;">
+    <input type="file" class="btn btn-dark" id="btn-archivo"/>
+
+    <select id="btn-tipo" class="btn btn-dark" style="margin-top: 2px;">
+        {#        <option value="8">malo</option>#}
+        <option value="1">puntos</option>
+        <option value="2">Mesh 1</option>
+        <option value="3">Mesh 2</option>
+        {#        <option value="4">Mesh 3</option>#}
+        <option value="5">Mesh 3</option>
+        <option value="6">mesh 4</option>
+        <option value="7">Cargar objeto</option>
+        <option value="8">En desarrollo</option>
+    </select>
+    <button id="btn-renderizar" class="btn btn-dark" style="margin-top: 2px;">Renderizar</button>
+</div>
+
+<div class="container-fluid">
+    <div class="row  p-4">
+
+        <canvas id="contenedorDeScene"></canvas>
+
+    </div>
+</div>
+
+</body>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/js/bootstrap.bundle.min.js"
+        integrity="sha384-MrcW6ZMFYlzcLA8Nl+NtUVF0sA7MsXsP1UyJoMp4YLEuNSfAP+JcXn/tWtIaxVXM"
+        crossorigin="anonymous"></script>
+
+<script type="module">
+
+    import * as THREE from 'https://unpkg.com/three@0.126.1/build/three.module.js';
+    import Delaunator from 'https://cdn.skypack.dev/delaunator@5.0.0';
+    import {OrbitControls} from 'https://unpkg.com/three@0.126.1/examples/jsm/controls/OrbitControls.js'
+    import {GLTFLoader} from 'https://cdn.skypack.dev/three@0.126.1/examples/jsm/loaders/GLTFLoader.js';
+
+
+    ///configuracion de la scene /////
+    const canvas = document.querySelector('#contenedorDeScene');
+    const renderer = new THREE.WebGLRenderer({antialias: true, canvas});
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0xD4E6F1);
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+
+    var light = new THREE.DirectionalLight(0xffffff, 1.5);
+    light.position.setScalar(100);
+    scene.add(light);
+    scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+
+    camera.position.x = -20;
+    camera.position.y = -7;
+    camera.position.z = -2;
+
+    {#instancias importantes#}
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    var delaunator = Delaunator;
+    var gui = new dat.GUI({name: 'My GUI'});
+
+    document.getElementById("btn-renderizar").addEventListener("click", function () {
+        limpiarScene();
+        var graficoTipo = document.getElementById('btn-tipo');
+        var file = document.getElementById("btn-archivo").files[0];
+
+        if (file.name.split(".").includes("txt")) {
+            var reader = new FileReader();
+            reader.onload = function (evt) {
+                var data = evt.target.result;
+
+
+                if (graficoTipo.value == "1") puntos(data);
+
+                else if (graficoTipo.value == "2") meshlamber1(data);
+
+                else if (graficoTipo.value == "3") meshlamber2(data);
+
+                else if (graficoTipo.value == "4") meshlamber3(data);
+
+                else if (graficoTipo.value == "5") meshlamber4(data);
+
+                else if (graficoTipo.value == "6") mesh4(data);
+
+                else if (graficoTipo.value == "8") enDesarrollo(data);
+
+                else alert("La funcion Cargar Objeto solo permite archivos .glb");
+            }
+            reader.readAsText(file, "UTF-8");
+
+            reader.onerror = function () {
+                console.log('error de lectura');
+            }
+        } else if (file.name.split(".").includes("glb")) {
+
+            if (graficoTipo.value != "7") alert("Este archivo solo puede ser renderizado por la funcion Cargar Objeto");
+
+            else {
+
+                const reader = new FileReader();
+                reader.onload = function () {
+                    const result = reader.result;
+                    loadModel(result);
+
+                }
+                reader.readAsDataURL(file);
+
+            }
+            ;
+
+        } else alert("Archivo con formato invalido")
+        animate();
+
+    });
+
+    function limpiarScene() {
+        // Remover todos los objetos de la escena
+        while (scene.children.length > 2) {
+            const objRemovido = scene.children.pop();
+            scene.remove(objRemovido);
+            camera.position.x = -20;
+            camera.position.y = -7;
+            camera.position.z = -2;
+            for (let i = 0; i < gui.__controllers.length; i++) {
+                gui.__controllers[i].remove();
+            }
+        }
+    }
+
+    function loadModel(file) {
+        const loader = new GLTFLoader();
+        loader.load(
+            // Ruta al archivo GLTF
+            file,
+            // Callback llamado cuando el modelo se carga
+            function (gltf) {
+                gltf.scene.traverse((child) => {
+
+                    if (child.isMesh) {
+                        gui.add(child.material, "wireframe");
+                        child.material.wireframe = false;
+                        child.material.side = THREE.FrontSide;
+                    }
+                });
+                // Añadimos el modelo a la escena
+                scene.add(gltf.scene);
+            },
+            // Callback para el progreso de la carga
+            function (xhr) {
+                console.log((xhr.loaded / xhr.total * 100) + '% cargado');
+            },
+            // Callback en caso de error
+            function (error) {
+                console.error('Error al cargar el modelo GLTF', error);
+            }
+        );
+    }
+
+    function mesh4(data) {
+
+        const contenidoArchivo = data.split('\r\n');
+        const points = [];
+
+        for (let i = 0; i < contenidoArchivo.length - 2; i++) {
+            const coords = contenidoArchivo[i].split(' ').map(parseFloat);
+            const point = new THREE.Vector3(coords[0], coords[1], coords[2]);
+            points.push(point);
+        }
+
+        var geom = new THREE.BufferGeometry().setFromPoints(points);
+        var cloud = new THREE.Points(
+            geom,
+            new THREE.PointsMaterial({color: 0x99ccff, size: 0, visible: false})
+        );
+        scene.add(cloud);
+
+        // triangulate x, z
+        var indexDelaunay = Delaunator.from(
+            points.map(v => {
+                // return [v.x -v.y, v.y];
+                return [v.x - v.z, v.y];
+                // return [v.x -v.z -v.y, v.y-v.z -v.y];
+            })
+        );
+
+        var meshIndex = []; // delaunay index => three.js index
+        for (let i = 0; i < indexDelaunay.triangles.length; i++) {
+            meshIndex.push(indexDelaunay.triangles[i]);
+        }
+
+        geom.setIndex(meshIndex); // add three.js index to the existing geometry
+        geom.computeVertexNormals();
+
+        // Asignar un color único a cada vértice
+        const colors = [];
+        for (let i = 0; i < points.length; i++) {
+            // Generar un color aleatorio para cada vértice
+            const color = new THREE.Color(Math.random(), Math.random(), Math.random());
+            colors.push(color);
+        }
+
+        // Crear un nuevo atributo de color para la geometría
+        geom.setAttribute('color', new THREE.BufferAttribute(new Float32Array(colors.length * 3), 3));
+        const colorAttribute = geom.getAttribute('color');
+
+        // Asignar los colores a los vértices de la geometría
+        for (let i = 0; i < points.length; i++) {
+            colorAttribute.setXYZ(i, colors[i].r, colors[i].g, colors[i].b);
+        }
+
+        // Crear el material con una interpolación de color
+        const material = new THREE.MeshLambertMaterial({
+            vertexColors: true, // Habilitar colores en los vértices
+            // color: "blue", // Color base del material
+            wireframe: true, // Mostrar en alambre para resaltar los vértices
+        });
+
+        // Crear el mesh con la geometría y el material
+        const mesh = new THREE.Mesh(geom, material);
+        scene.add(mesh);
+
+        gui.add(mesh.material, "wireframe");
+
+    }
+
+    function puntos(data) {
+
+        const contenidoArchivo = data.split('\r\n');
+
+        for (let i = 0; i < contenidoArchivo.length - 2; i++) {
+            {#for (let i = 0; i < 40; i++) {#}
+
+            // Puntos
+
+            const pointGeometry = new THREE.BufferGeometry();
+            const vertex = new Float32Array([
+                parseFloat(contenidoArchivo[i].split(' ')[0]), // Coordenada X
+                parseFloat(contenidoArchivo[i].split(' ')[1]), // Coordenada Y
+                parseFloat(contenidoArchivo[i].split(' ')[2])  // Coordenada Z
+            ]);
+            pointGeometry.setAttribute('position', new THREE.BufferAttribute(vertex, 3));
+
+
+            const pointMaterial = new THREE.PointsMaterial({color: 0xff0000, size: 0.1});
+
+            const point = new THREE.Points(pointGeometry, pointMaterial);
+            scene.add(point);
+        }
+
+    }
+
+    function meshlamber1(data) {
+
+        const contenidoArchivo = data.split('\r\n');
+
+        const vertices = [];
+        const indices = [];
+
+        for (let i = 0; i < contenidoArchivo.length; i++) {
+            const coordinates = contenidoArchivo[i].split(' ').map(parseFloat);
+            vertices.push(coordinates[0], coordinates[1], coordinates[2]);
+        }
+        // Triangulación de los puntos
+        for (let i = 0; i < vertices.length / 3 - 2; i++) {
+            indices.push(0, i + 1, i + 2);
+        }
+
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+        geometry.setIndex(indices);
+
+        const material = new THREE.MeshBasicMaterial({color: 0xff0000});
+        const mesh = new THREE.Mesh(geometry, material);
+
+        scene.add(mesh);
+
+        const wireframe = new THREE.WireframeGeometry(geometry);
+        const wireframeMaterial = new THREE.LineBasicMaterial({color: 0x000000, depthTest: false});
+        const wireframeMesh = new THREE.LineSegments(wireframe, wireframeMaterial);
+
+        scene.add(wireframeMesh);
+
+    }
+
+    function meshlamber2(data) {
+
+        const contenidoArchivo = data.split('\r\n');
+
+        const vertices = [];
+        const indices = [];
+
+        for (let i = 0; i < contenidoArchivo.length; i++) {
+            const coordinates = contenidoArchivo[i].split(' ').map(parseFloat);
+            vertices.push(coordinates[0], coordinates[1], coordinates[2]);
+        }
+
+        // Triangulación de los puntos
+        for (let i = 0; i < vertices.length / 3 - 2; i++) {
+            indices.push(i, i + 1, i + 2);
+        }
+
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+        geometry.setIndex(indices);
+
+        const material = new THREE.MeshBasicMaterial({color: 0xff0000});
+        const mesh = new THREE.Mesh(geometry, material);
+
+        scene.add(mesh);
+
+        const wireframe = new THREE.WireframeGeometry(geometry);
+        const wireframeMaterial = new THREE.LineBasicMaterial({color: 0x000000, depthTest: false});
+        const wireframeMesh = new THREE.LineSegments(wireframe, wireframeMaterial);
+
+        scene.add(wireframeMesh);
+
+    }
+
+    function meshlamber3(data) {
+
+        const contenidoArchivo = data.split('\r\n');
+
+        const vertices = [];
+        const indices = [];
+
+        for (let i = 0; i < contenidoArchivo.length; i++) {
+            const coordinates = contenidoArchivo[i].split(' ').map(parseFloat);
+            vertices.push(coordinates[0], coordinates[1], coordinates[2]);
+        }
+
+        // Triangulación de los puntos
+        for (let i = 0; i < vertices.length / 3 - 2; i++) {
+            indices.push(i, i + 1, i + 2);
+            indices.push(i + 1, i + 3, i + 2);
+        }
+
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+        geometry.setIndex(indices);
+
+        const material = new THREE.MeshBasicMaterial({color: 0xff0000});
+        const mesh = new THREE.Mesh(geometry, material);
+
+        scene.add(mesh);
+
+        const wireframe = new THREE.WireframeGeometry(geometry);
+        const wireframeMaterial = new THREE.LineBasicMaterial({color: 0x000000, depthTest: false});
+        const wireframeMesh = new THREE.LineSegments(wireframe, wireframeMaterial);
+
+        scene.add(wireframeMesh);
+
+    }
+
+    function meshlamber4(data) {
+
+        const contenidoArchivo = data.split('\r\n');
+
+        // Malla
+        const geometry = new THREE.BufferGeometry();
+        const vertices = [];
+        const colors = [];
+
+        for (let i = 0; i < contenidoArchivo.length - 2; i++) {
+            vertices.push(
+                parseFloat(contenidoArchivo[i].split(' ')[0]), // Coordenada X
+                parseFloat(contenidoArchivo[i].split(' ')[1]), // Coordenada Y
+                parseFloat(contenidoArchivo[i].split(' ')[2])  // Coordenada Z
+            );
+
+            // Generar un color aleatorio para cada vértice
+            const color = new THREE.Color(Math.random(), Math.random(), Math.random());
+            colors.push(color.r, color.g, color.b);
+        }
+
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+        geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+
+        const material = new THREE.MeshBasicMaterial({vertexColors: true});
+        const mesh = new THREE.Mesh(geometry, material);
+        scene.add(mesh);
+
+    }
+
+    function malo(data) {
+
+        const contenidoArchivo = data.split('\r\n');
+
+        for (let i = 0; i < contenidoArchivo.length - 2; i++) {
+            // Geometrías
+            const vertices = [
+                new THREE.Vector3(parseFloat(contenidoArchivo[i].split(' ')[0]), 0, 0),
+                new THREE.Vector3(0, parseFloat(contenidoArchivo[i].split(' ')[1]), 0),
+                new THREE.Vector3(0, 0, parseFloat(contenidoArchivo[i].split(' ')[2])),
+            ];
+
+            const colors = [
+                new THREE.Color(0xff0000), // Rojo
+                new THREE.Color(0x00ff00), // Verde
+                new THREE.Color(0x0000ff)  // Azul
+            ];
+
+            const triangleGeometry = new THREE.BufferGeometry().setFromPoints(vertices);
+            triangleGeometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array([
+                colors[0].r, colors[0].g, colors[0].b,
+                colors[1].r, colors[1].g, colors[1].b,
+                colors[2].r, colors[2].g, colors[2].b,
+            ]), 3));
+
+            const material = new THREE.MeshBasicMaterial({vertexColors: true});
+
+            // Objetos
+            const triangulo1 = new THREE.Mesh(triangleGeometry, material);
+            triangulo1.name = i.toString();
+
+            scene.add(triangulo1);
+        }
+
+    }
+
+    function enDesarrollo(data) {
+        const contenidoArchivo = data.split('\r\n');
+        const material = new THREE.MeshBasicMaterial({color: 0xff0000,  wireframe: true});
+        gui.add(material, 'wireframe');
+
+
+        for (let i = 0; i < contenidoArchivo.length - 20; i += 20) {
+            for (let j = 0; j < 19; j++) {
+                const p1 = contenidoArchivo[i + j].split(' ');
+                const p2 = contenidoArchivo[i + j + 1].split(' ');
+                const p3 = contenidoArchivo[i + j + 20].split(' ');
+                const p4 = contenidoArchivo[i + j + 21].split(' ');
+                
+                const vertices = new Float32Array([
+                    parseFloat(p4[0]), parseFloat(p4[1]), parseFloat(p4[2]),
+                    parseFloat(p2[0]), parseFloat(p2[1]), parseFloat(p2[2]),
+                    parseFloat(p1[0]), parseFloat(p1[1]), parseFloat(p1[2]),
+
+                    parseFloat(p1[0]), parseFloat(p1[1]), parseFloat(p1[2]),
+                    parseFloat(p3[0]), parseFloat(p3[1]), parseFloat(p3[2]),
+                    parseFloat(p4[0]), parseFloat(p4[1]), parseFloat(p4[2])
+
+                ])
+
+                const geo = new THREE.BufferGeometry();
+                geo.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+
+                const mesh = new THREE.Mesh(geo, material);
+                scene.add(mesh);
+                
+                if (j == 18) {
+
+                    const p4 = contenidoArchivo[i].split(' ');
+                    const p1 = contenidoArchivo[i + j + 1].split(' ');
+                    const p3 = contenidoArchivo[i+ 20].split(' ');
+                    const p2 = contenidoArchivo[i + j + 21].split(' ');
+
+                    const vertices = new Float32Array([
+                        parseFloat(p3[0]), parseFloat(p3[1]), parseFloat(p3[2]),
+                        parseFloat(p4[0]), parseFloat(p4[1]), parseFloat(p4[2]),
+                        parseFloat(p1[0]), parseFloat(p1[1]), parseFloat(p1[2]),
+                        
+                        parseFloat(p1[0]), parseFloat(p1[1]), parseFloat(p1[2]),
+                        parseFloat(p2[0]), parseFloat(p2[1]), parseFloat(p2[2]),
+                        parseFloat(p3[0]), parseFloat(p3[1]), parseFloat(p3[2]),
+
+                    ])
+
+                    const geo = new THREE.BufferGeometry();
+                    geo.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+
+                    const mesh = new THREE.Mesh(geo, material);
+                    scene.add(mesh);
+
+                }
+
+            }
+
+        }
+
+
+    }
+    
+    function animate() {
+        requestAnimationFrame(animate);
+        renderer.render(scene, camera);
+    }
+
+
+</script>
+{#const contenidoArchivo = data.split('\r\n');#}
+{##}
+{#        const boxMaterial = new THREE.MeshBasicMaterial({color: 0x000, side: THREE.DoubleSide});#}
+{##}
+{#        for (let i = 0; i < contenidoArchivo.length - 20; i += 20) {#}
+{#            for (let j = 0; j < 19; j++) {#}
+{#                const p1 = contenidoArchivo[i + j].split(' ');#}
+{#                const p2 = contenidoArchivo[i + j + 1].split(' ');#}
+{#                const p3 = contenidoArchivo[i + j + 20].split(' ');#}
+{#                const p4 = contenidoArchivo[i + j + 21].split(' ');#}
+{##}
+{#                const vertices = [#}
+{#                    parseFloat(p1[0]), parseFloat(p1[1]), parseFloat(p1[2]),#}
+{#                    parseFloat(p2[0]), parseFloat(p2[1]), parseFloat(p2[2]),#}
+{#                    parseFloat(p3[0]), parseFloat(p3[1]), parseFloat(p3[2]),#}
+{#                    parseFloat(p4[0]), parseFloat(p4[1]), parseFloat(p4[2])#}
+{#                ];#}
+{##}
+{#                const indices = [0, 1, 2, 0, 2, 3];#}
+{##}
+{#                const geometry = new THREE.BufferGeometry();#}
+{#                geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));#}
+{#                geometry.setIndex(indices);#}
+{##}
+{#                const box = new THREE.Mesh(geometry, boxMaterial);#}
+{#                scene.add(box);#}
+{##}
+{#                if (j == 18) {#}
+{#                    const p1 = contenidoArchivo[i].split(' ');#}
+{#                    const p2 = contenidoArchivo[i + 20].split(' ');#}
+{##}
+{#                    const vertices = [#}
+{#                        parseFloat(p4[0]), parseFloat(p4[1]), parseFloat(p4[2]),#}
+{#                        parseFloat(p2[0]), parseFloat(p2[1]), parseFloat(p2[2]),#}
+{#                        parseFloat(p1[0]), parseFloat(p1[1]), parseFloat(p1[2]),#}
+{#                        parseFloat(p3[0]), parseFloat(p3[1]), parseFloat(p3[2])#}
+{#                    ];#}
+{##}
+{#                    const indices = [0, 1, 2, 0, 2, 3];#}
+{##}
+{#                    const geometry = new THREE.BufferGeometry();#}
+{#                    geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));#}
+{#                    geometry.setIndex(indices);#}
+{##}
+{#                    const box = new THREE.Mesh(geometry, boxMaterial);#}
+{#                    scene.add(box);#}
+{#                }#}
+{#            }#}
+{#        }#}
+
+
+</html>
