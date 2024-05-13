@@ -1,2 +1,2 @@
 # v3d
-crea superficies con puntos en el espacio
+Crea superficies con puntos en el espacio
